@@ -52,6 +52,14 @@ AI_PROVIDERS = [
     {"value": "openrouter", "label": "OpenRouter"},
     {"value": "custom", "label": "직접 입력"},
 ]
+PATTERN_DESCRIPTIONS = {
+    "dip-buy": "기준가보다 내려왔을 때 여러 번 나눠 진입하는 템플릿",
+    "breakout": "직전 고점 돌파 구간에서 매수 기회를 찾는 템플릿",
+    "golden-cross": "단기선이 장기선을 상향 돌파할 때 진입하는 템플릿",
+    "rsi": "과매도·과매수 구간에서 반대로 대응하는 템플릿",
+    "scheduled": "시간 기반으로 반복 매수·매도하는 템플릿",
+    "ai-assisted": "AI가 신호를 보조 판단하고 룰 엔진이 최종 검증하는 템플릿",
+}
 STEP_CONFIG = [
     {"number": 1, "label": "회원가입", "key": "profile", "path": "/signup"},
     {"number": 2, "label": "주가 목록", "key": "overview", "path": "/dashboard"},
@@ -155,6 +163,12 @@ def checked_attr(enabled: bool) -> str:
 
 def selected_attr(current: str | None, expected: str) -> str:
     return " selected" if current == expected else ""
+
+
+def provider_label(provider: str | None) -> str:
+    if not provider:
+        return "미연결"
+    return next((item["label"] for item in AI_PROVIDERS if item["value"] == provider), provider)
 
 
 def find_connected_broker(draft: dict, broker_id: str) -> dict | None:
@@ -369,6 +383,25 @@ def render_message(message: dict | None) -> str:
     return f'<div class="message message-{html(message["kind"])}">{html(message["text"])}</div>'
 
 
+def render_page_header(title: str, subtitle: str, actions: list[tuple[str, str]] | None = None) -> str:
+    actions_html = ""
+    if actions:
+        actions_html = '<div class="page-actions">' + "".join(
+            f'<a class="button button-ghost button-small" href="{html(href)}">{html(label)}</a>'
+            for label, href in actions
+        ) + "</div>"
+    return f"""
+    <div class="page-header">
+      <div>
+        <span class="page-eyebrow">Trading Workspace</span>
+        <h2>{html(title)}</h2>
+        <p>{html(subtitle)}</p>
+      </div>
+      {actions_html}
+    </div>
+    """
+
+
 def render_progress(draft: dict) -> str:
     state = compute_step_state(draft)
     items = []
@@ -442,6 +475,90 @@ def render_side_summary(draft: dict) -> str:
     )
 
 
+def render_workspace_strip(draft: dict) -> str:
+    connected = ", ".join(item["broker_name"] for item in draft["brokers"][:2]) or "연결 전"
+    if len(draft["brokers"]) > 2:
+        connected += f" 외 {len(draft['brokers']) - 2}개"
+
+    watchlist = ", ".join(item["symbol"] for item in draft["symbols"][:3]) or "종목 없음"
+    if len(draft["symbols"]) > 3:
+        watchlist += f" 외 {len(draft['symbols']) - 3}개"
+
+    schedule = draft["patterns"][0]["schedule_label"] if draft["patterns"] else "규칙 없음"
+    ai_text = provider_label(draft["ai"].get("provider"))
+    ai_detail = draft["ai"].get("model") or "모델 미설정"
+
+    cards = [
+        ("연결 계좌", connected, f"{len(draft['brokers'])}개 계좌"),
+        ("감시 종목", watchlist, f"{len(draft['symbols'])}개 종목"),
+        ("실행 규칙", schedule, f"{len(draft['patterns'])}개 활성 규칙"),
+        ("AI 엔진", ai_text, ai_detail),
+    ]
+    return "".join(
+        f"""
+        <div class="workspace-tile">
+          <span>{html(label)}</span>
+          <strong>{html(primary)}</strong>
+          <small>{html(secondary)}</small>
+        </div>
+        """
+        for label, primary, secondary in cards
+    )
+
+
+def render_quick_links() -> str:
+    links = [
+        ("증권 연결", "API 키와 계좌를 추가", "/brokers"),
+        ("종목 추가", "워치리스트 만들기", "/symbols"),
+        ("패턴 설정", "매수·매도 규칙 구성", "/patterns"),
+        ("AI 연결", "자연어 전략 입력", "/ai"),
+    ]
+    return "".join(
+        f"""
+        <a class="quick-link" href="{html(path)}">
+          <strong>{html(title)}</strong>
+          <span>{html(description)}</span>
+        </a>
+        """
+        for title, description, path in links
+    )
+
+
+def render_pattern_library() -> str:
+    cards = []
+    for option in PATTERN_OPTIONS:
+        cards.append(
+            f"""
+            <div class="preset-card">
+              <strong>{html(option["label"])}</strong>
+              <p>{html(PATTERN_DESCRIPTIONS.get(option["value"], ""))}</p>
+            </div>
+            """
+        )
+    return "".join(cards)
+
+
+def render_ai_guardrails() -> str:
+    items = [
+        ("1", "자연어 입력", "사용자가 종목별 매매 의도를 텍스트로 입력"),
+        ("2", "JSON 신호화", "AI는 고정 포맷으로만 매수·매도 후보를 반환"),
+        ("3", "리스크 검증", "예산, 중복 주문, 장 시간, 보유 수량을 서버가 다시 확인"),
+        ("4", "주문 실행", "검증 통과 시 브로커 어댑터가 실제 주문을 전송"),
+    ]
+    return "".join(
+        f"""
+        <div class="rail-item">
+          <span>{html(number)}</span>
+          <div>
+            <strong>{html(title)}</strong>
+            <p>{html(description)}</p>
+          </div>
+        </div>
+        """
+        for number, title, description in items
+    )
+
+
 def render_shell(draft: dict, current_key: str, content: str) -> bytes:
     current = STEP_BY_KEY[current_key]
     profile_name = draft["profile"].get("nickname") or "설정 전"
@@ -494,11 +611,12 @@ def render_shell(draft: dict, current_key: str, content: str) -> bytes:
 
 
 def render_metric_cards(draft: dict) -> str:
+    ai_ready = draft["ai"].get("provider") and draft["ai"].get("has_api_key")
     cards = [
-        ("연결된 증권", len(draft["brokers"]), "API 키는 저장하지 않고 연결 메타 정보만 보관"),
-        ("등록된 종목", len(draft["symbols"]), "처음에는 비어 있고 직접 추가해야 시작됩니다"),
-        ("자동매매 규칙", len(draft["patterns"]), "종목별 매수/매도 조건과 주기를 관리"),
-        ("AI 설정", "설정됨" if draft["ai"].get("provider") else "미설정", "AI 판단 보조는 마지막 단계에서 추가"),
+        ("연결된 증권", len(draft["brokers"]), "거래에 사용할 계좌 연결 수"),
+        ("등록된 종목", len(draft["symbols"]), "현재 워치리스트에 올라간 종목"),
+        ("자동매매 규칙", len(draft["patterns"]), "감시 중인 매수·매도 시나리오"),
+        ("AI 상태", "연결됨" if ai_ready else "대기", "AI 판단 보조 엔진 연결 상태"),
     ]
     return "".join(
         f"""
@@ -519,8 +637,8 @@ def render_profile_section(draft: dict, message: dict | None) -> str:
       <div class="section-header">
         <div>
           <span class="section-step">1</span>
-          <h2>회원가입</h2>
-          <p>서비스에서 쓸 기본 계정 정보를 입력합니다.</p>
+          <h2>기본 정보</h2>
+          <p>워크스페이스에서 사용할 기본 계정 정보를 저장합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -536,11 +654,11 @@ def render_profile_section(draft: dict, message: dict | None) -> str:
           </div>
         </div>
         <div class="aside-panel">
-          <h3>이 단계에서 결정되는 것</h3>
+          <h3>바로 이어지는 단계</h3>
           <ul class="bullet-list">
-            <li>누가 이 자동매매 워크스페이스를 쓰는지</li>
-            <li>이후 단계에서 보여줄 기본 사용자 정보</li>
-            <li>알림/승인 흐름을 넣을 때 기준이 되는 계정 프로필</li>
+            <li>증권 계좌 연결</li>
+            <li>워치리스트 종목 추가</li>
+            <li>패턴과 AI 규칙 설정</li>
           </ul>
         </div>
       </form>
@@ -560,6 +678,7 @@ def render_connected_brokers(draft: dict) -> str:
     cards = []
     for item in draft["brokers"]:
         env_label = "실전" if item["environment"] == "production" else "모의"
+        saved_at = item.get("saved_at", "")[:10] or "방금"
         cards.append(
             f"""
             <div class="list-card">
@@ -570,6 +689,7 @@ def render_connected_brokers(draft: dict) -> str:
                 </div>
                 <span class="mini-status">{html(env_label)}</span>
               </div>
+              <p class="list-note">마지막 저장 {html(saved_at)}</p>
               <form method="post" action="/wizard/brokers/remove" class="inline-form">
                 <input type="hidden" name="itemId" value="{html(item['id'])}" />
                 <button class="button button-ghost button-small" type="submit">삭제</button>
@@ -592,16 +712,17 @@ def render_symbol_rows(draft: dict) -> str:
     rows = []
     for item in draft["symbols"]:
         rule_count = sum(1 for pattern in draft["patterns"] if pattern["symbol_id"] == item["id"])
+        state = "규칙 연결" if rule_count else "대기"
         rows.append(
             f"""
-            <div class="table-row">
-              <div>
+            <div class="table-row watchlist-row">
+              <div class="row-main">
                 <strong>{html(item["name"])}</strong>
                 <span>{html(item["symbol"])} · {html(item["market"])}</span>
               </div>
               <span>{html(item["broker_name"])}</span>
-              <span>미연동</span>
-              <span>{rule_count}개 규칙</span>
+              <span>시세 연동 전</span>
+              <span class="watchlist-status">{html(state)} · {rule_count}개</span>
               <form method="post" action="/wizard/symbols/remove" class="inline-form">
                 <input type="hidden" name="itemId" value="{html(item['id'])}" />
                 <button class="button button-ghost button-small" type="submit">삭제</button>
@@ -640,7 +761,11 @@ def render_pattern_list(draft: dict) -> str:
                 </div>
                 <span class="mini-status">{html(' / '.join(sides))}</span>
               </div>
-              <p class="list-note">{html(budget)} · {html(note)}</p>
+              <div class="tag-row">
+                <span class="tag">{html(budget)}</span>
+                <span class="tag">{html(item["schedule_label"])}</span>
+              </div>
+              <p class="list-note">{html(note)}</p>
               <form method="post" action="/wizard/patterns/remove" class="inline-form">
                 <input type="hidden" name="itemId" value="{html(item['id'])}" />
                 <button class="button button-ghost button-small" type="submit">삭제</button>
@@ -661,13 +786,13 @@ def render_ai_summary(draft: dict) -> str:
         </div>
         """
 
-    provider_label = next((item["label"] for item in AI_PROVIDERS if item["value"] == ai["provider"]), ai["provider"])
+    ai_provider = provider_label(ai["provider"])
     prompt_preview = ai.get("prompt") or "프롬프트 없음"
     return f"""
     <div class="list-card">
       <div class="list-card-head">
         <div>
-          <strong>{html(provider_label)}</strong>
+          <strong>{html(ai_provider)}</strong>
           <span>{html(ai.get("model", "모델 미지정"))}</span>
         </div>
         <span class="mini-status">{'API 키 입력됨' if ai.get('has_api_key') else 'API 키 미입력'}</span>
@@ -686,14 +811,39 @@ def render_overview_section(draft: dict) -> str:
       <div class="section-header">
         <div>
           <span class="section-step">2</span>
-          <h2>주가 목록</h2>
-          <p>연결한 증권, 등록한 종목, 자동매매 규칙을 한 번에 확인하는 대시보드입니다.</p>
+          <h2>워크스페이스 현황</h2>
+          <p>감시 종목, 연결 계좌, 실행 규칙을 한 번에 확인합니다.</p>
         </div>
+      </div>
+      <div class="workspace-strip">
+        {render_workspace_strip(draft)}
       </div>
       <div class="metric-grid">
         {render_metric_cards(draft)}
       </div>
       <div class="section-layout overview-layout">
+        <div class="panel-card market-board">
+          <div class="panel-card-head">
+            <div>
+              <h3>워치리스트</h3>
+              <span>실시간 시세 연동 전 단계에서는 감시 대상과 규칙 연결 상태를 먼저 정리합니다.</span>
+            </div>
+            <div class="button-row">
+              <a class="button button-ghost button-small" href="/symbols">종목 추가</a>
+              <a class="button button-ghost button-small" href="/patterns">규칙 추가</a>
+            </div>
+          </div>
+          <div class="table-head">
+            <span>종목</span>
+            <span>연결 증권</span>
+            <span>현재가</span>
+            <span>상태</span>
+            <span></span>
+          </div>
+          <div class="table-body">
+            {render_symbol_rows(draft)}
+          </div>
+        </div>
         <div class="panel-group">
           <div class="panel-card">
             <div class="panel-card-head">
@@ -713,27 +863,22 @@ def render_overview_section(draft: dict) -> str:
               {render_pattern_list(draft)}
             </div>
           </div>
-        </div>
-        <div class="panel-card">
-          <div class="panel-card-head">
-            <h3>종목 목록</h3>
-            <span>{len(draft["symbols"])}개</span>
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3>빠른 이동</h3>
+              <span>설정 계속하기</span>
+            </div>
+            <div class="quick-link-grid">
+              {render_quick_links()}
+            </div>
           </div>
-          <div class="table-head">
-            <span>종목</span>
-            <span>연결 증권</span>
-            <span>현재가</span>
-            <span>규칙</span>
-            <span></span>
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3>AI 연동</h3>
+              <span>{'완료' if draft['ai'].get('provider') else '대기'}</span>
+            </div>
+            {render_ai_summary(draft)}
           </div>
-          <div class="table-body">
-            {render_symbol_rows(draft)}
-          </div>
-          <div class="panel-card-head panel-card-footer">
-            <h3>AI 연동</h3>
-            <span>{'완료' if draft['ai'].get('provider') else '대기'}</span>
-          </div>
-          {render_ai_summary(draft)}
         </div>
       </div>
     </section>
@@ -883,8 +1028,8 @@ def render_broker_section(draft: dict, selected_broker_id: str, values: dict[str
       <div class="section-header">
         <div>
           <span class="section-step">3</span>
-          <h2>증권 추가</h2>
-          <p>거래에 사용할 증권 계정을 추가합니다. 실제 API 키 원문은 저장하지 않고 연결 정보만 임시 보관합니다.</p>
+          <h2>브로커 연결</h2>
+          <p>거래에 사용할 증권 계좌와 API 키 발급 정보를 연결합니다.</p>
         </div>
       </div>
       <div class="broker-picker">{render_broker_picker(broker["id"])}</div>
@@ -928,8 +1073,8 @@ def render_symbol_section(draft: dict, values: dict[str, str], message: dict | N
       <div class="section-header">
         <div>
           <span class="section-step">4</span>
-          <h2>종목 추가</h2>
-          <p>자동매매 대상으로 관리할 종목을 추가합니다.</p>
+          <h2>워치리스트 편집</h2>
+          <p>워치리스트에 자동매매 대상 종목을 추가합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -941,6 +1086,10 @@ def render_symbol_section(draft: dict, values: dict[str, str], message: dict | N
           <h3>현재 종목 목록</h3>
           <div class="stack-list">
             {render_symbol_rows(draft)}
+          </div>
+          <div class="subtle-card">
+            <h3>다음 단계</h3>
+            <p>종목을 넣은 뒤에는 패턴 설정 페이지에서 주기와 매수·매도 조건을 붙입니다.</p>
           </div>
         </div>
       </div>
@@ -985,8 +1134,8 @@ def render_pattern_section(draft: dict, values: dict[str, str], message: dict | 
       <div class="section-header">
         <div>
           <span class="section-step">5</span>
-          <h2>패턴 설정</h2>
-          <p>종목별로 자동 매수와 자동 매도를 어떤 패턴으로 돌릴지, 그리고 얼마나 자주 체크할지 정합니다.</p>
+          <h2>전략 빌더</h2>
+          <p>종목별로 어떤 조건에서 사고 팔지, 그리고 얼마나 자주 확인할지 정합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -998,6 +1147,9 @@ def render_pattern_section(draft: dict, values: dict[str, str], message: dict | 
           <h3>현재 자동매매 규칙</h3>
           <div class="stack-list">
             {render_pattern_list(draft)}
+          </div>
+          <div class="preset-grid">
+            {render_pattern_library()}
           </div>
         </div>
       </div>
@@ -1015,8 +1167,8 @@ def render_ai_section(draft: dict, values: dict[str, str], message: dict | None)
       <div class="section-header">
         <div>
           <span class="section-step">6</span>
-          <h2>AI API 추가</h2>
-          <p>외부 AI 모델을 연결하고, 자연어 텍스트로 자동매매 패턴을 설명합니다.</p>
+          <h2>프롬프트 스튜디오</h2>
+          <p>외부 AI 모델을 연결하고 텍스트 기반 전략을 추가합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -1037,9 +1189,11 @@ def render_ai_section(draft: dict, values: dict[str, str], message: dict | None)
         <div class="aside-panel">
           <h3>현재 AI 설정</h3>
           {render_ai_summary(draft)}
-          <div class="empty-card subtle-card">
-            <h3>다음 단계</h3>
-            <p>이 다음부터는 실제 브로커 어댑터, 시세 조회, 패턴 워커, 주문 승인/리스크 검증을 붙이면 됩니다.</p>
+          <div class="rail-card">
+            <h3>실행 흐름</h3>
+            <div class="rail-list">
+              {render_ai_guardrails()}
+            </div>
           </div>
         </div>
       </div>
@@ -1048,11 +1202,27 @@ def render_ai_section(draft: dict, values: dict[str, str], message: dict | None)
 
 
 def render_signup_page(draft: dict, message: dict | None = None) -> bytes:
-    return render_shell(draft, "profile", render_profile_section(draft, message))
+    content = (
+        render_page_header(
+            "회원가입",
+            "워크스페이스를 만들고 이후 증권 계좌와 종목 설정으로 넘어갑니다.",
+            [("대시보드 보기", "/dashboard")],
+        )
+        + render_profile_section(draft, message)
+    )
+    return render_shell(draft, "profile", content)
 
 
 def render_dashboard_page(draft: dict, message: dict | None = None) -> bytes:
-    content = f"{render_message(message)}{render_overview_section(draft)}"
+    content = (
+        render_page_header(
+            "주가 목록",
+            "워치리스트, 연결 계좌, 자동매매 규칙을 한 화면에서 확인합니다.",
+            [("증권 추가", "/brokers"), ("종목 추가", "/symbols")],
+        )
+        + render_message(message)
+        + render_overview_section(draft)
+    )
     return render_shell(draft, "overview", content)
 
 
@@ -1065,20 +1235,51 @@ def render_brokers_page(
     validation: dict | None = None,
 ) -> bytes:
     selected = selected_broker_id or READY_BROKERS[0]["id"]
-    content = render_broker_section(draft, selected, values or {}, message, validation)
+    content = (
+        render_page_header(
+            "증권 추가",
+            "브로커별 연결 방식과 발급 가이드를 확인하면서 계좌를 등록합니다.",
+            [("대시보드", "/dashboard"), ("종목 추가", "/symbols")],
+        )
+        + render_broker_section(draft, selected, values or {}, message, validation)
+    )
     return render_shell(draft, "brokers", content)
 
 
 def render_symbols_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
-    return render_shell(draft, "symbols", render_symbol_section(draft, values or {}, message))
+    content = (
+        render_page_header(
+            "종목 추가",
+            "자동매매 워치리스트에 넣을 종목과 연결 증권을 관리합니다.",
+            [("대시보드", "/dashboard"), ("패턴 설정", "/patterns")],
+        )
+        + render_symbol_section(draft, values or {}, message)
+    )
+    return render_shell(draft, "symbols", content)
 
 
 def render_patterns_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
-    return render_shell(draft, "patterns", render_pattern_section(draft, values or {}, message))
+    content = (
+        render_page_header(
+            "패턴 설정",
+            "반복 주기와 매수·매도 조건을 붙여 자동매매 규칙을 만듭니다.",
+            [("종목 추가", "/symbols"), ("AI 연결", "/ai")],
+        )
+        + render_pattern_section(draft, values or {}, message)
+    )
+    return render_shell(draft, "patterns", content)
 
 
 def render_ai_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
-    return render_shell(draft, "ai", render_ai_section(draft, values or {}, message))
+    content = (
+        render_page_header(
+            "AI API",
+            "AI 모델과 전략 프롬프트를 연결하고 주문 전 검증 흐름을 정리합니다.",
+            [("패턴 설정", "/patterns"), ("대시보드", "/dashboard")],
+        )
+        + render_ai_section(draft, values or {}, message)
+    )
+    return render_shell(draft, "ai", content)
 
 
 class AppHandler(BaseHTTPRequestHandler):
