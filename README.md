@@ -62,6 +62,36 @@ export SSO_FACEBOOK_CLIENT_SECRET="..."
 - `SSO_<PROVIDER>_REDIRECT_URI`를 지정하면 기본 콜백 URL(`{APP_BASE_URL}/auth/sso/callback/<provider>`) 대신 사용합니다.
 - `REQUEST_TIMEOUT_SECONDS`로 외부 API 타임아웃을 조정할 수 있습니다.
 
+Cloudflare DNS 무료 구성:
+
+1. Cloudflare에서 도메인 zone을 추가합니다.
+2. `Edit zone DNS` 권한이 있는 API token, `Zone ID`, 레코드 이름(`app.example.com`)을 준비합니다.
+3. 아래 스크립트로 A 레코드를 VM 공인 IP에 자동 연결합니다.
+
+```bash
+cd "/Users/minwokim/Documents/New project/stock-broker-onboarding"
+chmod +x infra/cloudflare/scripts/upsert_a_record.sh
+CF_API_TOKEN="..." \
+CF_ZONE_ID="..." \
+CF_RECORD_NAME="app.example.com" \
+CF_PROXIED=false \
+bash infra/cloudflare/scripts/upsert_a_record.sh
+```
+
+4. 레코드 연결 후 Caddy 도메인을 VM에 반영합니다.
+
+```bash
+cd "/Users/minwokim/Documents/New project/stock-broker-onboarding"
+chmod +x infra/oracle/scripts/set_domain_on_vm.sh
+APP_DOMAIN="app.example.com" \
+bash infra/oracle/scripts/set_domain_on_vm.sh
+```
+
+참고:
+
+- 현재 배포는 기본적으로 `<PUBLIC_IP>.sslip.io`를 자동 도메인으로 사용합니다.
+- 커스텀 도메인으로 바꾸면 `APP_BASE_URL=https://<도메인>`이 VM의 `/etc/stock-broker-onboarding/app.env`에 반영됩니다.
+
 주요 엔드포인트:
 
 - `/` 메인 온보딩 화면

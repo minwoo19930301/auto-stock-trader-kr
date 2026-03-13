@@ -18,6 +18,7 @@ write_files:
       CADDYFILE="/etc/caddy/Caddyfile"
       REPO_URL="__REPO_URL__"
       REPO_BRANCH="__REPO_BRANCH__"
+      APP_DOMAIN_FROM_ENV="__APP_DOMAIN__"
       APP_USER="__APP_USER__"
 
       if ! id "${APP_USER}" >/dev/null 2>&1; then
@@ -82,6 +83,7 @@ write_files:
       [Service]
       Type=simple
       WorkingDirectory=/opt/stock-broker-onboarding
+      EnvironmentFile=-/etc/stock-broker-onboarding/app.env
       ExecStart=/usr/bin/env PORT=8080 python3 /opt/stock-broker-onboarding/server.py
       Restart=always
       RestartSec=2
@@ -141,9 +143,17 @@ write_files:
       if [[ -z "${PUBLIC_IP}" ]]; then
         PUBLIC_IP="$(curl -fsS http://ifconfig.me || true)"
       fi
-      APP_DOMAIN="${PUBLIC_IP}.sslip.io"
+      APP_DOMAIN="${APP_DOMAIN_FROM_ENV}"
+      if [[ -z "${APP_DOMAIN}" ]]; then
+        APP_DOMAIN="${PUBLIC_IP}.sslip.io"
+      fi
       mkdir -p /etc/stock-broker-onboarding
       echo "${APP_DOMAIN}" > /etc/stock-broker-onboarding/domain.txt
+      if [[ ! -f /etc/stock-broker-onboarding/app.env ]]; then
+        cat > /etc/stock-broker-onboarding/app.env <<EOF
+      APP_BASE_URL=https://${APP_DOMAIN}
+      EOF
+      fi
 
       cat > "${CADDYFILE}" <<EOF
       ${APP_DOMAIN} {
