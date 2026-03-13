@@ -53,13 +53,27 @@ AI_PROVIDERS = [
     {"value": "custom", "label": "직접 입력"},
 ]
 STEP_CONFIG = [
-    {"number": 1, "label": "회원가입", "key": "profile"},
-    {"number": 2, "label": "주가 목록", "key": "overview"},
-    {"number": 3, "label": "증권 추가", "key": "brokers"},
-    {"number": 4, "label": "종목 추가", "key": "symbols"},
-    {"number": 5, "label": "패턴 설정", "key": "patterns"},
-    {"number": 6, "label": "AI API", "key": "ai"},
+    {"number": 1, "label": "회원가입", "key": "profile", "path": "/signup"},
+    {"number": 2, "label": "주가 목록", "key": "overview", "path": "/dashboard"},
+    {"number": 3, "label": "증권 추가", "key": "brokers", "path": "/brokers"},
+    {"number": 4, "label": "종목 추가", "key": "symbols", "path": "/symbols"},
+    {"number": 5, "label": "패턴 설정", "key": "patterns", "path": "/patterns"},
+    {"number": 6, "label": "AI API", "key": "ai", "path": "/ai"},
 ]
+STEP_BY_KEY = {step["key"]: step for step in STEP_CONFIG}
+STEP_BY_PATH = {step["path"]: step for step in STEP_CONFIG}
+FLASH_MESSAGES = {
+    "reset": {"kind": "success", "text": "임시 설정을 초기화했습니다."},
+    "profile_saved": {"kind": "success", "text": "회원가입 정보를 저장했습니다."},
+    "broker_added": {"kind": "success", "text": "증권을 연결 목록에 추가했습니다."},
+    "broker_removed": {"kind": "success", "text": "증권 연결을 삭제했습니다."},
+    "symbol_added": {"kind": "success", "text": "종목을 목록에 추가했습니다."},
+    "symbol_removed": {"kind": "success", "text": "종목과 연결된 규칙을 삭제했습니다."},
+    "pattern_added": {"kind": "success", "text": "자동매매 규칙을 추가했습니다."},
+    "pattern_removed": {"kind": "success", "text": "자동매매 규칙을 삭제했습니다."},
+    "ai_saved": {"kind": "success", "text": "AI 설정을 저장했습니다."},
+    "ai_cleared": {"kind": "success", "text": "AI 설정을 초기화했습니다."},
+}
 
 
 def fresh_draft() -> dict:
@@ -375,6 +389,110 @@ def render_progress(draft: dict) -> str:
     return "".join(items)
 
 
+def root_path_for_draft(draft: dict) -> str:
+    state = compute_step_state(draft)
+    return "/dashboard" if state["profile"] else "/signup"
+
+
+def flash_message_from_query(query: dict[str, list[str]]) -> dict | None:
+    flash_key = query.get("flash", [""])[-1]
+    return FLASH_MESSAGES.get(flash_key)
+
+
+def render_side_nav(draft: dict, current_key: str) -> str:
+    state = compute_step_state(draft)
+    items: list[str] = []
+    for step in STEP_CONFIG:
+        status = "완료" if state[step["key"]] else "대기"
+        classes = "nav-step"
+        if current_key == step["key"]:
+            classes += " is-current"
+        elif state[step["key"]]:
+            classes += " is-complete"
+        items.append(
+            f"""
+            <a class="{classes}" href="{html(step['path'])}">
+              <span class="nav-step-number">{step['number']}</span>
+              <span class="nav-step-copy">
+                <strong>{html(step['label'])}</strong>
+                <small>{status}</small>
+              </span>
+            </a>
+            """
+        )
+    return "".join(items)
+
+
+def render_side_summary(draft: dict) -> str:
+    profile_name = draft["profile"].get("nickname") or "미설정"
+    cards = [
+        ("프로필", profile_name),
+        ("증권", f'{len(draft["brokers"])}개'),
+        ("종목", f'{len(draft["symbols"])}개'),
+        ("규칙", f'{len(draft["patterns"])}개'),
+    ]
+    return "".join(
+        f"""
+        <div class="summary-mini">
+          <span>{html(label)}</span>
+          <strong>{html(value)}</strong>
+        </div>
+        """
+        for label, value in cards
+    )
+
+
+def render_shell(draft: dict, current_key: str, content: str) -> bytes:
+    current = STEP_BY_KEY[current_key]
+    profile_name = draft["profile"].get("nickname") or "설정 전"
+    document = f"""<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{html(current['label'])} | 주식 자동매매 설정</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-copy">
+          <strong>주식 자동매매 설정</strong>
+          <span>{html(profile_name)}</span>
+        </div>
+        <div class="topbar-actions">
+          <a class="button button-ghost button-small" href="/dashboard">대시보드</a>
+          <form method="post" action="/wizard/reset">
+            <button class="button button-ghost button-small" type="submit">초기화</button>
+          </form>
+        </div>
+      </header>
+
+      <div class="page-grid">
+        <aside class="nav-card">
+          <div class="nav-card-head">
+            <h1>설정 단계</h1>
+            <p>필요한 항목만 순서대로 입력하면 됩니다.</p>
+          </div>
+          <nav class="nav-step-list">
+            {render_side_nav(draft, current_key)}
+          </nav>
+          <div class="side-summary-grid">
+            {render_side_summary(draft)}
+          </div>
+        </aside>
+
+        <main class="page-main">
+          {content}
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+    return document.encode("utf-8")
+
+
 def render_metric_cards(draft: dict) -> str:
     cards = [
         ("연결된 증권", len(draft["brokers"]), "API 키는 저장하지 않고 연결 메타 정보만 보관"),
@@ -397,12 +515,12 @@ def render_metric_cards(draft: dict) -> str:
 def render_profile_section(draft: dict, message: dict | None) -> str:
     profile = draft["profile"]
     return f"""
-    <section id="step-1" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">1</span>
           <h2>회원가입</h2>
-          <p>서비스 기본 프로필을 먼저 잡아둡니다. 실제 인증은 나중에 붙여도 되지만, 흐름상 첫 단계에 두는 게 자연스럽습니다.</p>
+          <p>서비스에서 쓸 기본 계정 정보를 입력합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -435,7 +553,7 @@ def render_connected_brokers(draft: dict) -> str:
         return """
         <div class="empty-card">
           <h3>아직 연결된 증권이 없습니다.</h3>
-          <p>아래 3단계에서 키움, 한국투자, DB, LS 중 하나를 먼저 추가하면 여기부터 채워집니다.</p>
+          <p>증권 추가 페이지에서 계정을 연결하면 여기에 목록이 채워집니다.</p>
         </div>
         """
 
@@ -564,12 +682,12 @@ def render_ai_summary(draft: dict) -> str:
 
 def render_overview_section(draft: dict) -> str:
     return f"""
-    <section id="step-2" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">2</span>
           <h2>주가 목록</h2>
-          <p>처음에는 비어 있는 목록입니다. 증권을 연결하고 종목을 추가할수록 아래 보드가 채워집니다.</p>
+          <p>연결한 증권, 등록한 종목, 자동매매 규칙을 한 번에 확인하는 대시보드입니다.</p>
         </div>
       </div>
       <div class="metric-grid">
@@ -638,7 +756,7 @@ def render_broker_picker(selected_broker_id: str) -> str:
         classes = "broker-chip is-active" if broker["id"] == selected_broker_id else "broker-chip"
         chips.append(
             f"""
-            <a class="{classes}" href="/?broker={html(broker['id'])}#step-3">
+            <a class="{classes}" href="/brokers?broker={html(broker['id'])}">
               <strong>{html(broker['name'])}</strong>
               <span>{html(status['label'])}</span>
             </a>
@@ -761,12 +879,12 @@ def render_broker_form(broker: dict, values: dict[str, str], message: dict | Non
 def render_broker_section(draft: dict, selected_broker_id: str, values: dict[str, str], message: dict | None, validation: dict | None) -> str:
     broker = get_broker_or_none(selected_broker_id) or READY_BROKERS[0]
     return f"""
-    <section id="step-3" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">3</span>
           <h2>증권 추가</h2>
-          <p>지원 상태를 먼저 보고, 바로 연결 가능한 증권사만 단계적으로 붙입니다. 여기서는 계좌 메타 정보만 연결하고 실제 키는 저장하지 않습니다.</p>
+          <p>거래에 사용할 증권 계정을 추가합니다. 실제 API 키 원문은 저장하지 않고 연결 정보만 임시 보관합니다.</p>
         </div>
       </div>
       <div class="broker-picker">{render_broker_picker(broker["id"])}</div>
@@ -787,7 +905,7 @@ def render_symbol_section(draft: dict, values: dict[str, str], message: dict | N
     content = """
       <div class="empty-card">
         <h3>먼저 증권을 추가해야 합니다.</h3>
-        <p>3단계에서 하나 이상의 증권 계정을 등록해야 종목을 연결할 수 있습니다.</p>
+        <p>증권 추가 페이지에서 계정을 연결해야 종목을 등록할 수 있습니다.</p>
       </div>
     """
     if not empty:
@@ -806,12 +924,12 @@ def render_symbol_section(draft: dict, values: dict[str, str], message: dict | N
         """
 
     return f"""
-    <section id="step-4" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">4</span>
           <h2>종목 추가</h2>
-          <p>자동매매 대상으로 보고 싶은 종목을 하나씩 담습니다. 처음엔 비어 있고, 연결한 증권과 짝을 지어 등록합니다.</p>
+          <p>자동매매 대상으로 관리할 종목을 추가합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -835,7 +953,7 @@ def render_pattern_section(draft: dict, values: dict[str, str], message: dict | 
     content = """
       <div class="empty-card">
         <h3>먼저 종목을 추가해야 합니다.</h3>
-        <p>4단계에서 종목을 넣어야 어떤 종목에 어떤 패턴을 적용할지 고를 수 있습니다.</p>
+        <p>종목 추가 페이지에서 대상을 등록해야 자동매매 규칙을 만들 수 있습니다.</p>
       </div>
     """
     if symbol_options:
@@ -863,7 +981,7 @@ def render_pattern_section(draft: dict, values: dict[str, str], message: dict | 
         """
 
     return f"""
-    <section id="step-5" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">5</span>
@@ -893,12 +1011,12 @@ def render_ai_section(draft: dict, values: dict[str, str], message: dict | None)
     model_value = values.get("model") or ai.get("model")
     prompt_value = values.get("prompt") or ai.get("prompt")
     return f"""
-    <section id="step-6" class="section-card">
+    <section class="section-card">
       <div class="section-header">
         <div>
           <span class="section-step">6</span>
           <h2>AI API 추가</h2>
-          <p>마지막 단계에서는 외부 AI 모델을 붙이고, 자연어 텍스트로 패턴을 설명합니다. 실제 주문 전에는 항상 별도 룰 엔진 검증이 필요합니다.</p>
+          <p>외부 AI 모델을 연결하고, 자연어 텍스트로 자동매매 패턴을 설명합니다.</p>
         </div>
       </div>
       {render_message(message)}
@@ -929,79 +1047,38 @@ def render_ai_section(draft: dict, values: dict[str, str], message: dict | None)
     """
 
 
-def render_home_page(
+def render_signup_page(draft: dict, message: dict | None = None) -> bytes:
+    return render_shell(draft, "profile", render_profile_section(draft, message))
+
+
+def render_dashboard_page(draft: dict, message: dict | None = None) -> bytes:
+    content = f"{render_message(message)}{render_overview_section(draft)}"
+    return render_shell(draft, "overview", content)
+
+
+def render_brokers_page(
     draft: dict,
     *,
     selected_broker_id: str | None = None,
-    profile_message: dict | None = None,
-    broker_message: dict | None = None,
-    broker_validation: dict | None = None,
-    broker_values: dict[str, str] | None = None,
-    symbol_message: dict | None = None,
-    symbol_values: dict[str, str] | None = None,
-    pattern_message: dict | None = None,
-    pattern_values: dict[str, str] | None = None,
-    ai_message: dict | None = None,
-    ai_values: dict[str, str] | None = None,
-    page_message: dict | None = None,
+    values: dict[str, str] | None = None,
+    message: dict | None = None,
+    validation: dict | None = None,
 ) -> bytes:
     selected = selected_broker_id or READY_BROKERS[0]["id"]
-    document = f"""<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Auto Trading Setup Flow</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="hero-card">
-        <div class="hero-copy">
-          <span class="hero-kicker">Auto Trading Setup</span>
-          <h1>한 번에 다 보여주지 말고, 순서대로 설정하는 자동매매 온보딩</h1>
-          <p>
-            회원가입부터 증권 추가, 종목 선택, 자동 매수/매도 패턴, AI API 연결까지
-            단계별로 쌓아가는 구조입니다. 모바일에서도 위에서 아래로 내려가며 입력할 수 있게
-            구성했습니다.
-          </p>
-        </div>
-        <div class="hero-side">
-          <div class="hero-stat">
-            <span>배포 버전</span>
-            <strong>{BUILD_DATE}</strong>
-          </div>
-          <div class="hero-stat">
-            <span>지원 증권</span>
-            <strong>{len(BROKER_DETAILS)}개</strong>
-          </div>
-          <form method="post" action="/wizard/reset">
-            <button class="button button-ghost" type="submit">임시 설정 초기화</button>
-          </form>
-        </div>
-      </header>
+    content = render_broker_section(draft, selected, values or {}, message, validation)
+    return render_shell(draft, "brokers", content)
 
-      {render_message(page_message)}
 
-      <section class="progress-card">
-        <div class="progress-grid">
-          {render_progress(draft)}
-        </div>
-      </section>
+def render_symbols_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
+    return render_shell(draft, "symbols", render_symbol_section(draft, values or {}, message))
 
-      <main class="flow-stack">
-        {render_profile_section(draft, profile_message)}
-        {render_overview_section(draft)}
-        {render_broker_section(draft, selected, broker_values or {}, broker_message, broker_validation)}
-        {render_symbol_section(draft, symbol_values or {}, symbol_message)}
-        {render_pattern_section(draft, pattern_values or {}, pattern_message)}
-        {render_ai_section(draft, ai_values or {}, ai_message)}
-      </main>
-    </div>
-  </body>
-</html>
-"""
-    return document.encode("utf-8")
+
+def render_patterns_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
+    return render_shell(draft, "patterns", render_pattern_section(draft, values or {}, message))
+
+
+def render_ai_page(draft: dict, *, values: dict[str, str] | None = None, message: dict | None = None) -> bytes:
+    return render_shell(draft, "ai", render_ai_section(draft, values or {}, message))
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -1051,6 +1128,13 @@ class AppHandler(BaseHTTPRequestHandler):
             extra_headers=extra_headers,
         )
 
+    def _send_redirect(self, location: str, *, extra_headers: dict[str, str] | None = None) -> None:
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", location)
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+
     def _send_static(self, path: str, *, include_body: bool) -> bool:
         relative = path.lstrip("/")
         if not relative:
@@ -1083,11 +1167,47 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query, keep_blank_values=True)
+        flash = flash_message_from_query(query)
 
         if path in {"/", "/index.html"}:
             draft = self._draft()
+            if include_body:
+                self._send_redirect(root_path_for_draft(draft))
+            else:
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", root_path_for_draft(draft))
+                self.end_headers()
+            return
+
+        if path == "/signup":
+            body = render_signup_page(self._draft(), flash)
+            self._send_html(body, include_body=include_body)
+            return
+
+        if path == "/dashboard":
+            body = render_dashboard_page(self._draft(), flash)
+            self._send_html(body, include_body=include_body)
+            return
+
+        if path == "/brokers":
+            draft = self._draft()
             selected_broker = query.get("broker", [READY_BROKERS[0]["id"]])[-1]
-            body = render_home_page(draft, selected_broker_id=selected_broker)
+            body = render_brokers_page(draft, selected_broker_id=selected_broker, message=flash)
+            self._send_html(body, include_body=include_body)
+            return
+
+        if path == "/symbols":
+            body = render_symbols_page(self._draft(), message=flash)
+            self._send_html(body, include_body=include_body)
+            return
+
+        if path == "/patterns":
+            body = render_patterns_page(self._draft(), message=flash)
+            self._send_html(body, include_body=include_body)
+            return
+
+        if path == "/ai":
+            body = render_ai_page(self._draft(), message=flash)
             self._send_html(body, include_body=include_body)
             return
 
@@ -1144,8 +1264,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/wizard/reset":
-            body = render_home_page(fresh_draft(), page_message={"kind": "success", "text": "임시 설정을 모두 초기화했습니다."})
-            self._send_html(body, extra_headers={"Set-Cookie": clear_cookie_header()})
+            self._send_redirect("/signup?flash=reset", extra_headers={"Set-Cookie": clear_cookie_header()})
             return
 
         form = self._read_form()
@@ -1156,56 +1275,46 @@ class AppHandler(BaseHTTPRequestHandler):
                 "email": trim(form.get("email"), 120),
                 "phone": trim(form.get("phone"), 32),
             }
-            body = render_home_page(draft, profile_message={"kind": "success", "text": "프로필을 저장했습니다."})
-            self._render_with_cookie(draft, body)
+            self._send_redirect("/dashboard?flash=profile_saved", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             return
 
         if path == "/wizard/broker/add":
             selected_broker = form.get("selectedBrokerId") or READY_BROKERS[0]["id"]
             broker = get_broker_or_none(selected_broker)
             if not broker:
-                body = render_home_page(draft, page_message={"kind": "warning", "text": "선택한 증권사를 찾지 못했습니다."})
+                body = render_brokers_page(draft, selected_broker_id=selected_broker, message={"kind": "warning", "text": "선택한 증권사를 찾지 못했습니다."})
                 self._send_html(body)
                 return
             validation = validate_broker_values(broker, form)
             if validation["is_supported"] and not validation["missing_fields"]:
                 upsert_broker_entry(draft, broker, form)
-                body = render_home_page(
-                    draft,
-                    selected_broker_id=selected_broker,
-                    broker_message={"kind": "success", "text": f"{broker['name']} 증권을 연결 목록에 추가했습니다."},
-                    broker_validation=validation,
-                    broker_values={},
+                self._send_redirect(
+                    f"/brokers?broker={html(selected_broker)}&flash=broker_added",
+                    extra_headers={"Set-Cookie": draft_cookie_header(draft)},
                 )
-                self._render_with_cookie(draft, body)
                 return
 
-            body = render_home_page(
+            body = render_brokers_page(
                 draft,
                 selected_broker_id=selected_broker,
-                broker_message={"kind": "warning", "text": "필수 입력을 확인한 뒤 다시 추가해 주세요."},
-                broker_validation=validation,
-                broker_values=form,
+                message={"kind": "warning", "text": "필수 입력을 확인한 뒤 다시 추가해 주세요."},
+                validation=validation,
+                values=form,
             )
             self._send_html(body)
             return
 
         if path == "/wizard/brokers/remove":
             draft["brokers"] = remove_item(draft["brokers"], trim(form.get("itemId"), 40))
-            body = render_home_page(draft, broker_message={"kind": "success", "text": "증권 연결을 삭제했습니다."})
-            self._render_with_cookie(draft, body)
+            self._send_redirect("/brokers?flash=broker_removed", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             return
 
         if path == "/wizard/symbols/add":
             success, text = add_symbol_entry(draft, form)
-            body = render_home_page(
-                draft,
-                symbol_message={"kind": "success" if success else "warning", "text": text},
-                symbol_values={} if success else form,
-            )
             if success:
-                self._render_with_cookie(draft, body)
+                self._send_redirect("/symbols?flash=symbol_added", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             else:
+                body = render_symbols_page(draft, values=form, message={"kind": "warning", "text": text})
                 self._send_html(body)
             return
 
@@ -1213,46 +1322,35 @@ class AppHandler(BaseHTTPRequestHandler):
             removed_id = trim(form.get("itemId"), 40)
             draft["symbols"] = remove_item(draft["symbols"], removed_id)
             draft["patterns"] = [pattern for pattern in draft["patterns"] if pattern.get("symbol_id") != removed_id]
-            body = render_home_page(draft, symbol_message={"kind": "success", "text": "종목과 연결된 규칙을 함께 삭제했습니다."})
-            self._render_with_cookie(draft, body)
+            self._send_redirect("/symbols?flash=symbol_removed", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             return
 
         if path == "/wizard/patterns/add":
             success, text = add_pattern_entry(draft, form)
-            body = render_home_page(
-                draft,
-                pattern_message={"kind": "success" if success else "warning", "text": text},
-                pattern_values={} if success else form,
-            )
             if success:
-                self._render_with_cookie(draft, body)
+                self._send_redirect("/patterns?flash=pattern_added", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             else:
+                body = render_patterns_page(draft, values=form, message={"kind": "warning", "text": text})
                 self._send_html(body)
             return
 
         if path == "/wizard/patterns/remove":
             draft["patterns"] = remove_item(draft["patterns"], trim(form.get("itemId"), 40))
-            body = render_home_page(draft, pattern_message={"kind": "success", "text": "자동매매 규칙을 삭제했습니다."})
-            self._render_with_cookie(draft, body)
+            self._send_redirect("/patterns?flash=pattern_removed", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             return
 
         if path == "/wizard/ai/save":
             success, text = save_ai_entry(draft, form)
-            body = render_home_page(
-                draft,
-                ai_message={"kind": "success" if success else "warning", "text": text},
-                ai_values={} if success else form,
-            )
             if success:
-                self._render_with_cookie(draft, body)
+                self._send_redirect("/ai?flash=ai_saved", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             else:
+                body = render_ai_page(draft, values=form, message={"kind": "warning", "text": text})
                 self._send_html(body)
             return
 
         if path == "/wizard/ai/clear":
             draft["ai"] = {"provider": "", "model": "", "prompt": "", "has_api_key": False}
-            body = render_home_page(draft, ai_message={"kind": "success", "text": "AI 설정을 초기화했습니다."})
-            self._render_with_cookie(draft, body)
+            self._send_redirect("/ai?flash=ai_cleared", extra_headers={"Set-Cookie": draft_cookie_header(draft)})
             return
 
         self._send_json(HTTPStatus.NOT_FOUND, {"detail": "not_found"})
