@@ -331,6 +331,8 @@ body::after {
 
 .filter-pill,
 .action-btn {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line-strong);
   background: var(--panel-strong);
   color: var(--ink);
@@ -338,6 +340,7 @@ body::after {
   font: inherit;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-decoration: none;
   cursor: pointer;
   transition: transform 120ms steps(2, end), box-shadow 120ms steps(2, end);
 }
@@ -364,12 +367,14 @@ body::after {
 }
 
 .broker-card {
+  display: block;
   width: 100%;
   text-align: left;
   padding: 16px;
   border: 1px solid var(--line);
   background: var(--panel-soft);
   color: inherit;
+  text-decoration: none;
   cursor: pointer;
   transition: transform 120ms steps(2, end), box-shadow 120ms steps(2, end), border-color 120ms steps(2, end);
 }

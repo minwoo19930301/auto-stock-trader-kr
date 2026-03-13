@@ -14,85 +14,13 @@
   </head>
   <body>
     <div class="page-shell">
-      <div class="top-statusbar">
-        <span>SYS: READY</span>
-        <span>MODE: TOY-PROJECT</span>
-        <span>DATE: 2026-03-12</span>
-        <span>PROFILE: MULTI-BROKER</span>
-      </div>
-      <header class="hero">
-        <div class="hero-copy">
-          <p class="boot-line">C:\TRADER\BOOT&gt; scan --brokers --public-api --setup-guide</p>
-          <p class="eyebrow">Multi-Broker Setup</p>
-          <h1>증권사 API 키와 계좌 정보를 먼저 모으는 허브</h1>
-          <p class="hero-text">
-            회원가입과 계좌개설은 각 증권사에서 직접 진행하고, 이 화면에서는
-            자동매매에 필요한 <strong>계좌번호</strong>,
-            <strong>App Key/App Secret</strong>, <strong>추가 식별값</strong>만
-            모읍니다. 공개 문서 기준으로 연결 가능한 증권사는 바로 폼을
-            열어두고, 제휴형/미지원 증권사는 사유를 먼저 고지합니다.
-          </p>
-        </div>
-        <div class="hero-meta">
-          <div class="meta-card">
-            <span class="meta-label">공통 목표</span>
-            <strong>시세 확인 · 매수 · 매도 · 잔고 조회</strong>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">현재 기준</span>
-            <strong>2026-03-12 공개 문서 반영</strong>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">임시 저장</span>
-            <strong>브라우저 로컬 저장소</strong>
-          </div>
-        </div>
-      </header>
-
-      <section class="summary-section">
-        <div id="summaryCards" class="summary-grid"></div>
-        <div class="legend">
-          <span class="legend-item">
-            <span class="dot dot-ready"></span> 바로 연결 가능
-          </span>
-          <span class="legend-item">
-            <span class="dot dot-partner"></span> 제휴형
-          </span>
-          <span class="legend-item">
-            <span class="dot dot-limited"></span> 레거시/확인 필요
-          </span>
-          <span class="legend-item">
-            <span class="dot dot-unavailable"></span> 공개 주문 API 미확인
-          </span>
-        </div>
-      </section>
-
-      <main class="workspace">
-        <aside class="catalog-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Broker Catalog</p>
-              <h2>증권사 목록</h2>
-            </div>
-            <div id="filterPills" class="filter-pills"></div>
-          </div>
-          <div id="brokerList" class="broker-list"></div>
-        </aside>
-
-        <section class="detail-panel">
-          <div id="brokerDetail"></div>
-        </section>
-      </main>
-
-      <footer class="footer-note">
+      <div class="empty-state" style="margin: 4rem auto; max-width: 56rem">
+        <h1>이 화면은 Python 서버가 렌더링합니다.</h1>
         <p>
-          이 프로토타입은 화면과 가이드를 먼저 정리한 초기 버전입니다. 실서비스
-          전환 시에는 키를 브라우저가 아니라 서버에서 암호화 저장하고, 주문용
-          워커와 감사로그를 분리해야 합니다.
+          정적 파일로 직접 여는 대신 <code>python3 server.py</code> 또는 현재 배포된
+          Oracle VM 주소로 접속하세요.
         </p>
-      </footer>
+      </div>
     </div>
-
-    <script type="module" src="./app.js"></script>
   </body>
 </html>

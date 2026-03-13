@@ -1,6 +1,6 @@
 # Stock Broker Onboarding Hub
 
-국내 증권사 자동매매 서비스를 위한 첫 화면 프로토타입입니다.
+국내 증권사 자동매매 서비스를 위한 Python 중심 첫 화면 프로토타입입니다.
 
 핵심 목표:
 
@@ -18,20 +18,28 @@
 
 주의:
 
-- 이 버전은 입력값을 브라우저 `localStorage`에만 임시 저장합니다.
-- 실서비스에서는 절대 브라우저 저장소를 사용하지 말고 서버 측 암호화 저장소로 옮겨야 합니다.
+- 이 버전은 입력값을 저장하지 않고 서버에서 즉시 검증하거나 JSON으로만 내보냅니다.
+- 실서비스에서는 입력값을 서버 측 암호화 저장소로 옮기고 감사로그를 남겨야 합니다.
 - 한국투자증권처럼 개인 self-use와 고객 대상 제휴 흐름이 분리된 증권사는 약관/제휴 요건을 별도로 검토해야 합니다.
 
 실행:
 
-1. 파일을 브라우저에서 직접 열거나
-2. 정적 파일 서버로 `stock-broker-onboarding` 폴더를 서빙하면 됩니다.
+1. Python 서버를 실행합니다.
+2. 브라우저에서 로컬 페이지 또는 배포 주소로 접속합니다.
 
 예시:
 
 ```bash
 cd "/Users/minwokim/Documents/New project/stock-broker-onboarding"
-python3 -m http.server 4321
+PORT=4321 python3 server.py
 ```
 
 그 다음 브라우저에서 `http://localhost:4321` 로 접속합니다.
+
+주요 엔드포인트:
+
+- `/` 메인 온보딩 화면
+- `/healthz` 서비스 상태 확인
+- `/api/v1/brokers` 브로커 요약 목록
+- `/api/v1/brokers/{broker_id}` 브로커 상세
+- `/api/v1/account-connections/validate` JSON 기반 입력 검증
