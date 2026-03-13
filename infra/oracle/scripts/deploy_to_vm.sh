@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 STATE_FILE="${PROJECT_ROOT}/.deploy/oracle/instance.json"
-REMOTE_USER="${REMOTE_USER:-ubuntu}"
+REMOTE_USER="${REMOTE_USER:-opc}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/stock-broker-onboarding}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_rsa}"
 

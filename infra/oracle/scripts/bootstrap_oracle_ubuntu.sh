@@ -12,8 +12,8 @@ APP_PORT="${APP_PORT:-8000}"
 SERVER_NAME="${SERVER_NAME:-_}"
 ENV_FILE_PATH="${ENV_FILE_PATH:-/etc/stock-broker-onboarding/api.env}"
 SYSTEMD_PATH="/etc/systemd/system/stock-broker-onboarding-api.service"
-NGINX_PATH="/etc/nginx/sites-available/stock-broker-onboarding"
-NGINX_ENABLED_PATH="/etc/nginx/sites-enabled/stock-broker-onboarding"
+NGINX_PATH=""
+NGINX_ENABLED_PATH=""
 PUBLIC_HOST="${SERVER_NAME}"
 
 if [[ "${PUBLIC_HOST}" == "_" ]]; then
@@ -26,8 +26,18 @@ if [[ ! -d "${BACKEND_ROOT}" ]]; then
 fi
 
 echo "[1/7] install apt packages"
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip nginx
+if command -v apt-get >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y python3 python3-venv python3-pip nginx rsync
+  NGINX_PATH="/etc/nginx/sites-available/stock-broker-onboarding"
+  NGINX_ENABLED_PATH="/etc/nginx/sites-enabled/stock-broker-onboarding"
+elif command -v dnf >/dev/null 2>&1; then
+  sudo dnf install -y python3 python3-pip nginx rsync
+  NGINX_PATH="/etc/nginx/conf.d/stock-broker-onboarding.conf"
+else
+  echo "Unsupported package manager" >&2
+  exit 1
+fi
 
 echo "[2/7] create virtual environment"
 cd "${BACKEND_ROOT}"
@@ -53,12 +63,19 @@ sed \
   "${TEMPLATE_ROOT}/stock-broker-onboarding-api.service.tpl" | sudo tee "${SYSTEMD_PATH}" >/dev/null
 
 echo "[5/7] render nginx site"
+if [[ -n "${NGINX_ENABLED_PATH}" ]]; then
+  sudo install -d -m 755 /etc/nginx/sites-available /etc/nginx/sites-enabled
+fi
+
 sed \
   -e "s|__SERVER_NAME__|${SERVER_NAME}|g" \
   -e "s|__APP_PORT__|${APP_PORT}|g" \
   "${TEMPLATE_ROOT}/nginx-stock-broker-onboarding.conf.tpl" | sudo tee "${NGINX_PATH}" >/dev/null
 
-sudo ln -sf "${NGINX_PATH}" "${NGINX_ENABLED_PATH}"
+if [[ -n "${NGINX_ENABLED_PATH}" ]]; then
+  sudo ln -sf "${NGINX_PATH}" "${NGINX_ENABLED_PATH}"
+fi
+
 if [[ -f /etc/nginx/sites-enabled/default ]]; then
   sudo rm -f /etc/nginx/sites-enabled/default
 fi
@@ -72,6 +89,12 @@ sudo systemctl enable stock-broker-onboarding-api
 sudo systemctl restart stock-broker-onboarding-api
 sudo systemctl enable nginx
 sudo systemctl restart nginx
+
+if command -v firewall-cmd >/dev/null 2>&1 && sudo systemctl is-active --quiet firewalld; then
+  sudo firewall-cmd --permanent --add-service=http
+  sudo firewall-cmd --permanent --add-service=https
+  sudo firewall-cmd --reload
+fi
 
 echo "deployment complete"
 echo "health: http://127.0.0.1:${APP_PORT}/healthz"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import json
 import os
 import time
@@ -20,6 +21,9 @@ SHAPE_PREFERENCE = os.getenv("OCI_SHAPE_PREFERENCE", "VM.Standard.A1.Flex,VM.Sta
 SSH_PUBLIC_KEY_PATH = os.getenv("OCI_SSH_PUBLIC_KEY_PATH", str(Path.home() / ".ssh" / "id_rsa.pub"))
 STATE_DIR = Path(os.getenv("OCI_STATE_DIR", ".deploy/oracle"))
 STATE_FILE = STATE_DIR / "instance.json"
+IMAGE_OS_PREFERENCE = os.getenv("OCI_IMAGE_OS_PREFERENCE", "").strip()
+IMAGE_NAME_CONTAINS = os.getenv("OCI_IMAGE_NAME_CONTAINS", "").strip()
+CLOUD_INIT_FILE = os.getenv("OCI_CLOUD_INIT_FILE", "").strip()
 
 
 def load_config() -> dict:
@@ -43,6 +47,16 @@ def find_by_name(items, name: str):
         if getattr(item, "display_name", None) == name:
             return item
     return None
+
+
+def load_metadata() -> dict[str, str]:
+    metadata = {"ssh_authorized_keys": pick_ssh_public_key()}
+    if CLOUD_INIT_FILE:
+        cloud_init_path = Path(CLOUD_INIT_FILE)
+        if not cloud_init_path.exists():
+            raise FileNotFoundError(f"Cloud-init file not found: {cloud_init_path}")
+        metadata["user_data"] = base64.b64encode(cloud_init_path.read_bytes()).decode()
+    return metadata
 
 
 def ensure_vcn(network_client, compartment_id: str):
@@ -161,26 +175,37 @@ def available_shapes(compute_client, compartment_id: str, availability_domain: s
     return {shape.shape: shape for shape in shapes}
 
 
-def select_image(compute_client, compartment_id: str, want_aarch64: bool):
+def select_image(compute_client, compartment_id: str, want_aarch64: bool, shape_name: str):
     images = list_call_get_all_results(compute_client.list_images, compartment_id).data
     matches = []
     for image in images:
         name = image.display_name or ""
         os_name = image.operating_system or ""
-        if "Canonical Ubuntu" not in os_name:
-            continue
-        if "24.04" not in name:
+        if IMAGE_OS_PREFERENCE:
+            if IMAGE_OS_PREFERENCE != os_name:
+                continue
+        else:
+            if "Canonical Ubuntu" not in os_name:
+                continue
+            if "24.04" not in name:
+                continue
+
+        if IMAGE_NAME_CONTAINS and IMAGE_NAME_CONTAINS not in name:
             continue
         if want_aarch64 and "aarch64" not in name:
             continue
         if not want_aarch64 and "aarch64" in name:
             continue
-        if "Minimal" in name:
+        if not IMAGE_NAME_CONTAINS and "Minimal" in name:
+            continue
+
+        compatibility_entries = compute_client.list_image_shape_compatibility_entries(image.id).data
+        if not any(entry.shape == shape_name for entry in compatibility_entries):
             continue
         matches.append(image)
 
     if not matches:
-        raise RuntimeError("No matching Ubuntu image found")
+        raise RuntimeError(f"No matching image found for shape {shape_name}")
 
     matches.sort(key=lambda item: item.display_name, reverse=True)
     return matches[0]
@@ -195,7 +220,7 @@ def ensure_instance(compute_client, network_client, compartment_id: str, availab
         return compute_client.get_instance(existing.id).data
 
     shape_map = available_shapes(compute_client, compartment_id, availability_domain)
-    ssh_public_key = pick_ssh_public_key()
+    metadata = load_metadata()
     last_error = None
 
     for preferred_shape_name in SHAPE_PREFERENCE:
@@ -204,7 +229,7 @@ def ensure_instance(compute_client, network_client, compartment_id: str, availab
             continue
 
         want_aarch64 = shape.shape == "VM.Standard.A1.Flex"
-        image = select_image(compute_client, compartment_id, want_aarch64)
+        image = select_image(compute_client, compartment_id, want_aarch64, shape.shape)
 
         launch_details = oci.core.models.LaunchInstanceDetails(
             availability_domain=availability_domain,
@@ -215,7 +240,7 @@ def ensure_instance(compute_client, network_client, compartment_id: str, availab
                 subnet_id=subnet_id,
                 assign_public_ip=True,
             ),
-            metadata={"ssh_authorized_keys": ssh_public_key},
+            metadata=metadata,
             source_details=oci.core.models.InstanceSourceViaImageDetails(
                 image_id=image.id,
                 source_type="image",
